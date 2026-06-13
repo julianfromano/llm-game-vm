@@ -42,7 +42,10 @@ npm install
 npm run dev      # http://localhost:5173/
 ```
 
-Pegá una **API key de Gemini** (gratis en https://aistudio.google.com/app/apikey) en el campo del overlay y escribí tu deseo. Sin key, hay un parser local de respaldo para deseos simples.
+Elegí un **proveedor de LLM** y pegá su **API key** en el overlay (se guarda en localStorage, no se versiona). Sin key, hay un parser local de respaldo para deseos simples.
+
+- **Gemini** — gratis en https://aistudio.google.com/app/apikey (la quota es por modelo; si te quedás sin, probá otro del desplegable).
+- **Groq** — gratis en https://console.groq.com (Llama 3.3 70B, muy rápido, API estilo OpenAI).
 
 Controles base: **Espacio** / click para aletear. Cualquier otra tecla queda disponible para los deseos (`control`, `shift`, flechas, letras...).
 

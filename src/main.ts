@@ -1,7 +1,7 @@
 import { VM } from './vm';
 import { render } from './render';
 import { flappy, W, H } from './flappy';
-import { mergeSpec, compileWithGemini, compileLocally } from './compiler';
+import { mergeSpec, compile, compileLocally, type Provider } from './compiler';
 import type { GameSpec } from './types';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -9,10 +9,14 @@ canvas.width = W;
 canvas.height = H;
 const ctx = canvas.getContext('2d')!;
 
-// API key de Gemini opcional: persiste en localStorage para no re-pedirla
-const KEY = 'flappy.geminiKey';
-const getKey = () => localStorage.getItem(KEY) ?? '';
-const getModel = () => localStorage.getItem('flappy.geminiModel') || 'gemini-2.5-flash-lite';
+// proveedor + key + modelo, persistidos en localStorage (por proveedor)
+const getProvider = (): Provider => (localStorage.getItem('flappy.provider') as Provider) || 'gemini';
+const DEFAULT_MODEL: Record<Provider, string> = {
+  gemini: 'gemini-2.5-flash-lite',
+  groq: 'llama-3.3-70b-versatile',
+};
+const getKey = (p: Provider) => localStorage.getItem(`flappy.${p}Key`) ?? '';
+const getModel = (p: Provider) => localStorage.getItem(`flappy.${p}Model`) || DEFAULT_MODEL[p];
 
 let vm = new VM(flappy, Date.now() & 0xffff);
 
@@ -102,13 +106,14 @@ function runBoot(spec: GameSpec) {
 async function onPlay() {
   const wish = input.value.trim();
   if (!wish) { startWith(flappy); return; }
-  const key = getKey();
+  const provider = getProvider();
+  const key = getKey(provider);
   playBtn.disabled = true;
   try {
     let spec: GameSpec;
     if (key) {
-      status.textContent = 'Gemini está reescribiendo el juego…';
-      spec = await compileWithGemini(wish, flappy, { apiKey: key, model: getModel() });
+      status.textContent = `${provider === 'groq' ? 'Groq' : 'Gemini'} está reescribiendo el juego…`;
+      spec = await compile(wish, flappy, { apiKey: key, model: getModel(provider), provider });
     } else {
       status.textContent = 'Sin API key: usando parser local de respaldo.';
       spec = mergeSpec(flappy, compileLocally(wish));

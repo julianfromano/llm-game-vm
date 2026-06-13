@@ -135,72 +135,110 @@ Devolvé SOLO el GameSpec JSON completo, sin markdown ni explicaciones:
 { "world": {...}, "entities": [...], "rules": [...], "boot"?: "<JS opcional para transformar todo>" }
 Sé audaz: inventá entidades, props, tags, reglas y, si hace falta, una app entera en boot — cosas que el desarrollador nunca anticipó.`;
 
-// ---- Compilación con Google Gemini (generativelanguage API, API key) ----
-// Endpoint: .../v1beta/models/{model}:generateContent?key=<API_KEY>
-// La key se obtiene gratis en https://aistudio.google.com/app/apikey
-const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+// ---- Proveedores de LLM ----
+// Gemini: console.aistudio.google.com (gratis). Groq: console.groq.com (gratis).
+export type Provider = 'gemini' | 'groq';
 
 export interface CompileOptions {
-  apiKey: string;         // Google AI Studio API key
-  model?: string;         // ej. "gemini-2.0-flash", "gemini-1.5-flash"
+  apiKey: string;
+  model?: string;
+  provider?: Provider; // default 'gemini'
 }
 
-// Una llamada a Gemini: manda systemInstruction + texto de usuario, devuelve el texto.
-async function callGemini(systemText: string, userText: string, opts: CompileOptions): Promise<string> {
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+// una llamada al LLM = (system, user) -> texto. Reintenta ante 429/503/500.
+type LlmCall = (systemText: string, userText: string) => Promise<string>;
+const DELAYS = [800, 2000, 4000];
+
+async function fetchWithRetry(label: string, doFetch: () => Promise<Response>): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await doFetch();
+    if (res.ok) return res;
+    const retryable = res.status === 503 || res.status === 429 || res.status === 500;
+    if (!retryable || attempt >= DELAYS.length) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`${label} ${res.status}: ${detail.slice(0, 200)}`);
+    }
+    await new Promise((r) => setTimeout(r, DELAYS[attempt]));
+  }
+}
+
+// Gemini (generativelanguage API)
+function geminiCall(opts: CompileOptions): LlmCall {
   const model = opts.model ?? 'gemini-2.5-flash-lite';
   const url = `${GEMINI_BASE}/${model}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
-  const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: systemText }] },
-    contents: [{ role: 'user', parts: [{ text: userText }] }],
-    generationConfig: { temperature: 0.4, responseMimeType: 'application/json' },
-  });
-
-  // reintento con backoff ante 503/429/500 (picos de demanda transitorios)
-  const delays = [800, 2000, 4000];
-  let res!: Response;
-  for (let attempt = 0; ; attempt++) {
-    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-    if (res.ok) break;
-    const retryable = res.status === 503 || res.status === 429 || res.status === 500;
-    if (!retryable || attempt >= delays.length) {
-      const detail = await res.text().catch(() => '');
-      throw new Error(`Gemini ${res.status}: ${detail.slice(0, 200)}`);
-    }
-    await new Promise((r) => setTimeout(r, delays[attempt]));
-  }
-  const data = await res.json();
-  const text: string = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
-  if (!text) throw new Error('Respuesta vacía del modelo');
-  return text;
+  return async (systemText, userText) => {
+    const body = JSON.stringify({
+      systemInstruction: { parts: [{ text: systemText }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: { temperature: 0.4, responseMimeType: 'application/json' },
+    });
+    const res = await fetchWithRetry('Gemini', () => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }));
+    const data = await res.json();
+    const text: string = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
+    if (!text) throw new Error('Respuesta vacía del modelo');
+    return text;
+  };
 }
 
-export async function compileWithGemini(prompt: string, base: GameSpec, opts: CompileOptions): Promise<GameSpec> {
+// Groq (API compatible con OpenAI)
+function groqCall(opts: CompileOptions): LlmCall {
+  const model = opts.model ?? 'llama-3.3-70b-versatile';
+  return async (systemText, userText) => {
+    const body = JSON.stringify({
+      model, temperature: 0.4,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'system', content: systemText }, { role: 'user', content: userText }],
+    });
+    const res = await fetchWithRetry('Groq', () => fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.apiKey}` },
+      body,
+    }));
+    const data = await res.json();
+    const text: string = data?.choices?.[0]?.message?.content ?? '';
+    if (!text) throw new Error('Respuesta vacía del modelo');
+    return text;
+  };
+}
+
+// Flujo común: pedir spec, parsear con reparación, loguear.
+async function compileFlow(call: LlmCall, prompt: string, base: GameSpec): Promise<GameSpec> {
   const programa = JSON.stringify(base);
-  const text = await callGemini(
+  const text = await call(
     IR_VOCABULARY,
     `PROGRAMA ACTUAL (GameSpec):\n${programa}\n\nDeseo del jugador: """${prompt}"""\n\nDevolvé SOLO el GameSpec completo modificado.`,
-    opts,
   );
 
   let spec: GameSpec;
   try {
     spec = parseSpecJson(text);
   } catch (err) {
-    // JSON malformado del modelo: una pasada de REPARACIÓN devolviendo el texto roto
-    console.warn('[gemini] JSON inválido, intentando reparar:', (err as Error).message);
-    console.log('[gemini] texto crudo (roto):', text);
-    const fixed = await callGemini(
+    console.warn('[llm] JSON inválido, intentando reparar:', (err as Error).message);
+    console.log('[llm] texto crudo (roto):', text);
+    const fixed = await call(
       'Sos un reparador de JSON. Recibís un texto que DEBÍA ser JSON válido pero falló al parsear. Devolvé SOLO el JSON corregido (mismo contenido, escapando bien strings y comillas, sin comentarios ni texto extra).',
       `Error al parsear: ${(err as Error).message}\n\nTexto a corregir:\n${text}`,
-      opts,
     );
-    spec = parseSpecJson(fixed); // si esto también falla, propaga el error
+    spec = parseSpecJson(fixed);
   }
 
   logSpecChanges(base, spec);
   logExecutionModel(spec);
   return spec;
 }
+
+// Punto de entrada: elige proveedor según opts.provider (default gemini).
+export function compile(prompt: string, base: GameSpec, opts: CompileOptions): Promise<GameSpec> {
+  const call = opts.provider === 'groq' ? groqCall(opts) : geminiCall(opts);
+  return compileFlow(call, prompt, base);
+}
+
+// alias retrocompatible
+export const compileWithGemini = (prompt: string, base: GameSpec, opts: CompileOptions) =>
+  compile(prompt, base, { ...opts, provider: 'gemini' });
 
 // Muestra CÓMO se ejecuta finalmente cada regla: IR interpretado (datos, tipo
 // bytecode) vs JS crudo compilado con new Function. Esto es lo que corre la VM.
