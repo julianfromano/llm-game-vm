@@ -23,6 +23,7 @@ export class VM {
   private keysPressed = new Set<string>();        // edge de este frame
   private keysReleased = new Set<string>();
   private collisionsThisFrame: Array<[Entity, Entity]> = [];
+  private warnedRules = new WeakSet<Rule>();      // reglas ya avisadas (diagnóstico)
 
   constructor(spec: GameSpec, seed = 1) {
     this.spec = spec;
@@ -105,6 +106,11 @@ export class VM {
       const targets = rule.for
         ? this.selectTargets(rule.for, f.self, f.other)
         : f.self ? [f.self] : [undefined];
+      // diagnóstico: error típico del LLM -> for:self en un trigger sin self
+      if (rule.for?.s === 'self' && !f.self && !this.warnedRules.has(rule)) {
+        this.warnedRules.add(rule);
+        console.warn(`[vm] regla con for:{s:'self'} en trigger '${rule.when.t}' (sin self): no selecciona nada y no corre. Usá for:{s:'with_tag',tag:'bird'}.`, rule);
+      }
       for (const tgt of targets) {
         const ctx = this.baseCtx(dt, tgt, f.other);
         if (rule.if && !bool(evalExpr(rule.if, ctx))) continue;
