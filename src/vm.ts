@@ -188,7 +188,14 @@ export class VM {
           break;
         }
         case 'spawn': this.spawn(fx.template, ctx); break;
-        case 'destroy': if (ctx.self) this.destroy(ctx.self); break;
+        case 'destroy': {
+          // target opcional (ej. the_collider para destruir al otro de una colisión).
+          // Aceptamos también `for` por robustez (el LLM a veces lo emite así).
+          const tgt = fx.target ?? (fx as { for?: Target }).for;
+          if (tgt) { for (const e of this.selectTargets(tgt, ctx.self, ctx.other)) this.destroy(e); }
+          else if (ctx.self) this.destroy(ctx.self);
+          break;
+        }
         case 'emit': this.events.push(fx.event); break;
         case 'end_game': this.state = fx.result; return;
         case 'js': this.runJs(fx.code, ctx); if (this.state !== 'playing') return; break;
@@ -200,10 +207,13 @@ export class VM {
   private jsCache = new Map<string, (api: GameApi) => void>();
 
   private runJs(code: string, ctx: EvalCtx) {
+    const api = this.makeApi(ctx);
     let fn = this.jsCache.get(code);
     if (!fn) {
       try {
-        fn = new Function('api', '"use strict";\nconst {self,other,world,entities,dt,rng,Math,spawn,destroy,emit,win,lose,find,nearest}=api;\n' + code) as (api: GameApi) => void;
+        // el scope se deriva de las claves reales de la API: nunca se desincroniza
+        const names = Object.keys(api).join(',');
+        fn = new Function('api', `"use strict";\nconst {${names}}=api;\n` + code) as (api: GameApi) => void;
       } catch (e) {
         console.error('[js] error compilando regla:', e);
         fn = () => {};
@@ -211,7 +221,7 @@ export class VM {
       this.jsCache.set(code, fn);
     }
     try {
-      fn(this.makeApi(ctx));
+      fn(api);
     } catch (e) {
       console.error('[js] error ejecutando regla:', e);
     }
@@ -222,6 +232,7 @@ export class VM {
       self: ctx.self?.props ?? null,
       other: ctx.other?.props ?? null,
       selfEntity: ctx.self ?? null,
+      otherEntity: ctx.other ?? null,
       world: this.world.props,
       entities: this.entities,
       dt: ctx.dt,
@@ -254,10 +265,26 @@ export class VM {
       if (rule.when.t !== 'on_draw') continue;
       for (const fx of rule.do) {
         if (fx.e !== 'js') continue;
+        const d: DrawApi = {
+          ctx, w, h, image, Math, rng: this.rng,
+          world: this.world.props, entities: this.entities,
+          find: (tag) => this.entities.filter((e) => e.tags.has(tag)),
+          nearest: (tag, from) => {
+            let best: Entity | undefined, bd = Infinity;
+            for (const e of this.entities) {
+              if (!e.tags.has(tag)) continue;
+              const p = e.props.pos as Vec2; if (!p) continue;
+              const dd = Math.hypot(p.x - from.x, p.y - from.y);
+              if (dd < bd) { bd = dd; best = e; }
+            }
+            return best ?? null;
+          },
+        };
         let fn = this.jsDrawCache.get(fx.code);
         if (!fn) {
           try {
-            fn = new Function('d', '"use strict";\nconst {ctx,w,h,world,entities,Math,rng,find,nearest,image}=d;\n' + fx.code) as (d: DrawApi) => void;
+            const names = Object.keys(d).join(',');
+            fn = new Function('d', `"use strict";\nconst {${names}}=d;\n` + fx.code) as (d: DrawApi) => void;
           } catch (e) {
             console.error('[on_draw] error compilando:', e);
             fn = () => {};
@@ -265,21 +292,7 @@ export class VM {
           this.jsDrawCache.set(fx.code, fn);
         }
         try {
-          fn({
-            ctx, w, h, image, Math, rng: this.rng,
-            world: this.world.props, entities: this.entities,
-            find: (tag) => this.entities.filter((e) => e.tags.has(tag)),
-            nearest: (tag, from) => {
-              let best: Entity | undefined, bd = Infinity;
-              for (const e of this.entities) {
-                if (!e.tags.has(tag)) continue;
-                const p = e.props.pos as Vec2; if (!p) continue;
-                const d = Math.hypot(p.x - from.x, p.y - from.y);
-                if (d < bd) { bd = d; best = e; }
-              }
-              return best ?? null;
-            },
-          });
+          fn(d);
         } catch (e) {
           console.error('[on_draw] error ejecutando:', e);
         }

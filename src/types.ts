@@ -49,7 +49,7 @@ export type Effect =
   | { e: 'set'; path: string; value: Expr }
   | { e: 'add'; path: string; value: Expr }
   | { e: 'spawn'; template: EntityTemplate }
-  | { e: 'destroy' }
+  | { e: 'destroy'; target?: Target } // sin target: destruye self. Con target (ej. the_collider): destruye esas entidades
   | { e: 'add_force'; value: Expr } // vec, se acumula en self.acc
   | { e: 'emit'; event: string }
   | { e: 'end_game'; result: 'win' | 'lose' }
@@ -80,6 +80,7 @@ export interface GameApi {
   self: Record<string, Value> | null;   // props de la entidad self (mutables)
   other: Record<string, Value> | null;  // props del colisionado, si aplica
   selfEntity: Entity | null;            // la entidad self completa (tags, id)
+  otherEntity: Entity | null;           // la entidad colisionada completa (para destroy/tags)
   world: Record<string, Value>;         // props globales (mutables)
   entities: Entity[];                   // todas las entidades vivas
   dt: number;

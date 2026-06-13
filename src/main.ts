@@ -15,15 +15,24 @@ const getKey = () => localStorage.getItem(KEY) ?? '';
 
 let vm = new VM(flappy, Date.now() & 0xffff);
 
-// ---- input: espacio + click/touch -> tecla 'space' ----
+// ---- input: TODAS las teclas se reenvían a la VM con nombre normalizado ----
+// (así cualquier regla on_input con cualquier tecla funciona, no solo 'space')
 // Ignorar cuando se está escribiendo en un campo o el overlay de deseo está visible.
 const typing = (e: Event) => {
   const t = e.target as HTMLElement | null;
   const tag = t?.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || overlay?.style.display !== 'none';
 };
-addEventListener('keydown', (e) => { if (e.code === 'Space' && !typing(e)) { e.preventDefault(); vm.keyDown('space'); } });
-addEventListener('keyup', (e) => { if (e.code === 'Space' && !typing(e)) vm.keyUp('space'); });
+// nombre canónico de tecla: e.key en minúscula; barra espaciadora -> 'space'
+const normKey = (e: KeyboardEvent) => (e.code === 'Space' || e.key === ' ' ? 'space' : e.key.toLowerCase());
+addEventListener('keydown', (e) => {
+  if (typing(e)) return;
+  const k = normKey(e);
+  if (k === 'space' || k.startsWith('arrow')) e.preventDefault(); // evitar scroll del navegador
+  vm.keyDown(k);
+});
+addEventListener('keyup', (e) => { if (!typing(e)) vm.keyUp(normKey(e)); });
+// puntero/touch -> 'space' (controlador por defecto, ej. aletear)
 const press = (e: Event) => { e.preventDefault(); vm.keyDown('space'); };
 const release = () => vm.keyUp('space');
 canvas.addEventListener('pointerdown', press);

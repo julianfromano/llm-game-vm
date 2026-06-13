@@ -17,6 +17,24 @@ Un juego (base: Flappy) donde, antes de jugar, escribís un **deseo en lenguaje 
 
 > Los hatches de JS no están sandboxeados (uso local, sin restricciones de seguridad).
 
+### El IR de un vistazo
+
+Una regla (`Rule`) combina 4 ejes ortogonales:
+
+- **Trigger** (`when`): `every_frame`, `every`, `on_input` (cualquier tecla), `on_collision`, `on_spawn`, `on_destroy`, `on_cross`, `on_draw`.
+- **Condición** (`if`, opcional): expresión booleana evaluada por target.
+- **Target** (`for`, opcional): `all`, `with_tag`, `id`, `self`, `the_collider`, `nearest_to`.
+- **Effects** (`do`): `set`, `add`, `spawn`, `destroy` (con `target` opcional, ej. `the_collider`), `add_force`, `emit`, `end_game`, `js`.
+
+Las entidades tienen `tags` y `props` arbitrarias; cualquiera con `pos`+`vel` se mueve (integrador genérico). La gravedad no es un opcode: es una regla que suma una fuerza.
+
+### Robustez
+
+- **Reintento con backoff** ante 503/429/500 de Gemini.
+- **Reparación de JSON**: si el modelo devuelve JSON inválido, se le re-pide que lo corrija automáticamente.
+- **Scope de `js` auto-derivado** de la API real: nunca se desincroniza.
+- Errores de `js`/`on_draw`/`boot` se capturan y loguean sin tumbar el juego.
+
 ## Uso
 
 ```bash
@@ -25,6 +43,16 @@ npm run dev      # http://localhost:5173/
 ```
 
 Pegá una **API key de Gemini** (gratis en https://aistudio.google.com/app/apikey) en el campo del overlay y escribí tu deseo. Sin key, hay un parser local de respaldo para deseos simples.
+
+Controles base: **Espacio** / click para aletear. Cualquier otra tecla queda disponible para los deseos (`control`, `shift`, flechas, letras...).
+
+### Deseos de ejemplo
+
+- "poca gravedad y fondo celeste"
+- "el personaje es un perro 🐶"
+- "disparo balas con Ctrl que parten los tubos en dos donde impactan"
+- "cada 5 puntos se invierte la gravedad"
+- "convertí esto en un sistema de gestión de clientes con nombre, email y un botón para borrar"
 
 La consola (F12) muestra:
 - `[gemini] cambios finales`: diff legible de lo que cambió.

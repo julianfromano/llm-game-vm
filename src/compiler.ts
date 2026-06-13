@@ -75,13 +75,19 @@ const IR_VOCABULARY = `Sos el COMPILADOR de un motor de juegos determinista. El 
 - when (Trigger): {"t":"every_frame"} | {"t":"every","seconds":N} | {"t":"on_input","key":"space","phase":"down|up|held"} | {"t":"on_collision","a":"tagA","b":"tagB"} | {"t":"on_spawn","tag":T} | {"t":"on_destroy","tag":T} | {"t":"on_cross","expr":Expr} | {"t":"on_draw"}
 - if (opcional, Expr booleano): condición evaluada POR target.
 - for (opcional, Target): {"s":"all"} | {"s":"with_tag","tag":T} | {"s":"id","id":I} | {"s":"self"} | {"s":"the_collider"} | {"s":"nearest_to","tag":T,"ref":Target}
-- do (Effect[]): {"e":"set","path":P,"value":Expr} | {"e":"add","path":P,"value":Expr} | {"e":"spawn","template":EntityTemplate} | {"e":"destroy"} | {"e":"add_force","value":Expr(vec)} | {"e":"emit","event":S} | {"e":"end_game","result":"win|lose"} | {"e":"js","code":"<JS>"}
+- do (Effect[]): {"e":"set","path":P,"value":Expr} | {"e":"add","path":P,"value":Expr} | {"e":"spawn","template":EntityTemplate} | {"e":"destroy","target"?:Target} | {"e":"add_force","value":Expr(vec)} | {"e":"emit","event":S} | {"e":"end_game","result":"win|lose"} | {"e":"js","code":"<JS>"}
 - path en set/add: "self.vel.y", "world.score", "other.pos.x", etc.
+- on_input "key": nombre de tecla = e.key del navegador en minúscula. Ej: "space" (barra), "control", "shift", "alt", "enter", "arrowup", "arrowdown", "arrowleft", "arrowright", "a".."z", "0".."9". El click/touch en pantalla equivale a "space".
+- destroy: sin "target" destruye a self; con "target" destruye a esas entidades. En una regla on_collision, self = entidad del tag "a", y {"s":"the_collider"} = entidad del tag "b". Para que una bala (tag a) rompa un tubo (tag b) Y se elimine la bala: do=[{"e":"destroy"},{"e":"destroy","target":{"s":"the_collider"}}].
+
+## REGLA DE ORO: el set de primitivas es CERRADO
+Los triggers, targets y effects listados arriba son TODOS los que existen. NO inventes campos, efectos, targets ni triggers nuevos (ej: no agregues "for" dentro de un effect, no inventes {"e":"shoot"} ni {"e":"damage"}). Si la VM recibe algo que no está en esta lista, lo IGNORA en silencio y la mecánica no funciona.
+Por eso: si una mecánica NO se expresa LIMPIAMENTE con las primitivas exactas de arriba, NO improvises con primitivas dudosas — implementá la regla COMPLETA con un único efecto {"e":"js","code":"..."}. El efecto js es Turing-completo y nunca falla por falta de vocabulario. Ante la duda, usá js.
 
 ## Escape hatch: efecto "js" (PODER TOTAL)
 Cuando un deseo NO se pueda expresar con los efectos de arriba, usá {"e":"js","code":"..."}. El código es JavaScript que corre cada vez que dispara la regla, con esta API en scope (no uses import/require/DOM):
 - self, other: props mutables de la entidad (ej: self.vel.y = -440; self.pos.x += 1). null si no aplica.
-- selfEntity: la entidad completa (selfEntity.tags es un Set, selfEntity.id).
+- selfEntity / otherEntity: las entidades COMPLETAS (con .tags Set, .id, .props). Usalas para destroy(otherEntity) o leer tags. (self/other son solo las props; selfEntity/otherEntity son las entidades.)
 - world: props globales mutables (ej: world.score += 1; world.gravity = 0).
 - entities: array de todas las entidades vivas (cada una {id, tags:Set, props}).
 - dt (segundos del frame), rng() -> [0,1) determinista (USALO en vez de Math.random), Math.
@@ -124,6 +130,7 @@ Para reemplazar el juego por otra app: llamá stopGameLoop(), ocultá el canvas 
 Si el deseo es solo modificar el juego, NO uses boot (dejalo afuera) y trabajá con world/entities/rules.
 
 ## Formato de salida
+IMPORTANTE: el resultado debe ser JSON 100% válido. En los strings de "code" (js/boot) NO uses saltos de línea reales ni comentarios //; escribí el JS en UNA sola línea, separando sentencias con ";", y escapá bien las comillas. Nada de texto fuera del JSON.
 Devolvé SOLO el GameSpec JSON completo, sin markdown ni explicaciones:
 { "world": {...}, "entities": [...], "rules": [...], "boot"?: "<JS opcional para transformar todo>" }
 Sé audaz: inventá entidades, props, tags, reglas y, si hace falta, una app entera en boot — cosas que el desarrollador nunca anticipó.`;
@@ -138,22 +145,19 @@ export interface CompileOptions {
   model?: string;         // ej. "gemini-2.0-flash", "gemini-1.5-flash"
 }
 
-export async function compileWithGemini(prompt: string, base: GameSpec, opts: CompileOptions): Promise<GameSpec> {
+// Una llamada a Gemini: manda systemInstruction + texto de usuario, devuelve el texto.
+async function callGemini(systemText: string, userText: string, opts: CompileOptions): Promise<string> {
   const model = opts.model ?? 'gemini-2.5-flash';
   const url = `${GEMINI_BASE}/${model}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
-
-  const programa = JSON.stringify(base);
   const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: IR_VOCABULARY }] },
-    contents: [
-      { role: 'user', parts: [{ text: `PROGRAMA ACTUAL (GameSpec):\n${programa}\n\nDeseo del jugador: """${prompt}"""\n\nDevolvé SOLO el GameSpec completo modificado.` }] },
-    ],
+    systemInstruction: { parts: [{ text: systemText }] },
+    contents: [{ role: 'user', parts: [{ text: userText }] }],
     generationConfig: { temperature: 0.4, responseMimeType: 'application/json' },
   });
 
   // reintento con backoff ante 503/429/500 (picos de demanda transitorios)
-  let res!: Response;
   const delays = [800, 2000, 4000];
+  let res!: Response;
   for (let attempt = 0; ; attempt++) {
     res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
     if (res.ok) break;
@@ -167,7 +171,32 @@ export async function compileWithGemini(prompt: string, base: GameSpec, opts: Co
   const data = await res.json();
   const text: string = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
   if (!text) throw new Error('Respuesta vacía del modelo');
-  const spec = parseSpecJson(text);
+  return text;
+}
+
+export async function compileWithGemini(prompt: string, base: GameSpec, opts: CompileOptions): Promise<GameSpec> {
+  const programa = JSON.stringify(base);
+  const text = await callGemini(
+    IR_VOCABULARY,
+    `PROGRAMA ACTUAL (GameSpec):\n${programa}\n\nDeseo del jugador: """${prompt}"""\n\nDevolvé SOLO el GameSpec completo modificado.`,
+    opts,
+  );
+
+  let spec: GameSpec;
+  try {
+    spec = parseSpecJson(text);
+  } catch (err) {
+    // JSON malformado del modelo: una pasada de REPARACIÓN devolviendo el texto roto
+    console.warn('[gemini] JSON inválido, intentando reparar:', (err as Error).message);
+    console.log('[gemini] texto crudo (roto):', text);
+    const fixed = await callGemini(
+      'Sos un reparador de JSON. Recibís un texto que DEBÍA ser JSON válido pero falló al parsear. Devolvé SOLO el JSON corregido (mismo contenido, escapando bien strings y comillas, sin comentarios ni texto extra).',
+      `Error al parsear: ${(err as Error).message}\n\nTexto a corregir:\n${text}`,
+      opts,
+    );
+    spec = parseSpecJson(fixed); // si esto también falla, propaga el error
+  }
+
   logSpecChanges(base, spec);
   logExecutionModel(spec);
   return spec;
@@ -189,7 +218,7 @@ export function logExecutionModel(spec: GameSpec): void {
         const compiledSource =
           r.when.t === 'on_draw'
             ? 'function(d){"use strict";\nconst {ctx,w,h,world,entities,Math,rng,find,nearest,image}=d;\n' + fx.code + '\n}'
-            : 'function(api){"use strict";\nconst {self,other,world,entities,dt,rng,Math,spawn,destroy,emit,win,lose,find,nearest}=api;\n' + fx.code + '\n}';
+            : 'function(api){"use strict";\nconst {self,other,selfEntity,otherEntity,world,entities,dt,rng,Math,spawn,destroy,emit,win,lose,find,nearest}=api;\n' + fx.code + '\n}';
         console.log(`[exec] regla ${i}: JS CRUDO compilado con new Function (when=${r.when.t}). Fuente ejecutable real:`);
         console.log(compiledSource);
       });
