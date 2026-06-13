@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>LLM Game VM — Flappy (deseos -> IR)</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #05070f; color: #cbd5e1;
+        font-family: system-ui, sans-serif; display: grid; place-items: center; gap: 12px; }
+      canvas { border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.5); touch-action: none; }
+      p { margin: 0; opacity: .7; font-size: 14px; }
+      #wish { position: fixed; inset: 0; background: rgba(5,7,15,.92); display: grid;
+        place-items: center; z-index: 10; }
+      .card { width: min(440px, 90vw); background: #0b1020; border: 1px solid #1e293b;
+        border-radius: 16px; padding: 20px; display: grid; gap: 12px; }
+      .card h1 { font-size: 18px; margin: 0; }
+      .card small { opacity: .6; }
+      textarea, input { width: 100%; box-sizing: border-box; background: #05070f; color: #e2e8f0;
+        border: 1px solid #334155; border-radius: 8px; padding: 10px; font-family: inherit; font-size: 14px; }
+      textarea { min-height: 80px; resize: vertical; }
+      .row { display: flex; gap: 8px; }
+      button { flex: 1; padding: 10px; border: 0; border-radius: 8px; font-weight: 600; cursor: pointer; }
+      #playBtn { background: #ffd166; color: #0b1020; }
+      #skipBtn { background: #1e293b; color: #cbd5e1; }
+      button:disabled { opacity: .5; cursor: default; }
+      #wishStatus { min-height: 16px; font-size: 13px; color: #94a3b8; }
+    </style>
+  </head>
+  <body>
+    <div id="wish">
+      <div class="card">
+        <h1>¿Qué querés cambiar del juego?</h1>
+        <small>Escribí tu deseo en lenguaje natural: física, reglas, diseño, controles… lo que sea.</small>
+        <textarea id="wishInput" placeholder="Ej: poca gravedad y fondo rojo. Con API key de Gemini podés pedir mecánicas nuevas."></textarea>
+        <input id="apiKeyInput" type="password" placeholder="Gemini API key (opcional — sin ella usa parser local)" />
+        <div id="wishStatus"></div>
+        <div class="row">
+          <button id="playBtn">Compilar y jugar</button>
+          <button id="skipBtn">Jugar base</button>
+        </div>
+      </div>
+    </div>
+    <canvas id="game"></canvas>
+    <!-- container para el escape hatch `boot`: si el deseo transforma la app
+         (ej. sistema de gestión), el JS de boot construye su UI acá -->
+    <div id="app-root"></div>
+    <p>Espacio o tocá la pantalla para aletear. (VM determinista — deseos compilados a IR)</p>
+    <script>
+      // persistir la API key localmente (no se versiona)
+      const k = document.getElementById('apiKeyInput');
+      k.value = localStorage.getItem('flappy.geminiKey') || '';
+      k.addEventListener('input', () => localStorage.setItem('flappy.geminiKey', k.value.trim()));
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

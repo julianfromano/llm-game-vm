@@ -1,0 +1,114 @@
+import { VM } from './vm';
+import { render } from './render';
+import { flappy, W, H } from './flappy';
+import { mergeSpec, compileWithGemini, compileLocally } from './compiler';
+import type { GameSpec } from './types';
+
+const canvas = document.getElementById('game') as HTMLCanvasElement;
+canvas.width = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d')!;
+
+// API key de Gemini opcional: persiste en localStorage para no re-pedirla
+const KEY = 'flappy.geminiKey';
+const getKey = () => localStorage.getItem(KEY) ?? '';
+
+let vm = new VM(flappy, Date.now() & 0xffff);
+
+// ---- input: espacio + click/touch -> tecla 'space' ----
+// Ignorar cuando se está escribiendo en un campo o el overlay de deseo está visible.
+const typing = (e: Event) => {
+  const t = e.target as HTMLElement | null;
+  const tag = t?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || overlay?.style.display !== 'none';
+};
+addEventListener('keydown', (e) => { if (e.code === 'Space' && !typing(e)) { e.preventDefault(); vm.keyDown('space'); } });
+addEventListener('keyup', (e) => { if (e.code === 'Space' && !typing(e)) vm.keyUp('space'); });
+const press = (e: Event) => { e.preventDefault(); vm.keyDown('space'); };
+const release = () => vm.keyUp('space');
+canvas.addEventListener('pointerdown', press);
+canvas.addEventListener('pointerup', release);
+
+// debug: exponer estado para inspección manual (solo dev)
+(window as unknown as Record<string, unknown>).__game = { get vm() { return vm; }, render: () => render(ctx, vm, W, H), start: (s: GameSpec) => startWith(s) };
+
+// ---- loop con timestep fijo determinista (con control de parada) ----
+const DT = 1 / 60;
+let acc = 0;
+let last = performance.now();
+let loopRunning = true;
+function frame(now: number) {
+  if (!loopRunning) return;
+  acc += Math.min(0.1, (now - last) / 1000);
+  last = now;
+  while (acc >= DT) { vm.step(DT); acc -= DT; }
+  render(ctx, vm, W, H);
+  requestAnimationFrame(frame);
+}
+function stopGameLoop() { loopRunning = false; }
+function startGameLoop() { if (!loopRunning) { loopRunning = true; last = performance.now(); requestAnimationFrame(frame); } }
+requestAnimationFrame(frame);
+
+// ---- pantalla de deseo (overlay) ----
+const overlay = document.getElementById('wish') as HTMLElement;
+const input = document.getElementById('wishInput') as HTMLTextAreaElement;
+const playBtn = document.getElementById('playBtn') as HTMLButtonElement;
+const skipBtn = document.getElementById('skipBtn') as HTMLButtonElement;
+const status = document.getElementById('wishStatus') as HTMLElement;
+
+function startWith(spec: GameSpec) {
+  vm = new VM(spec, Date.now() & 0xffff);
+  overlay.style.display = 'none';
+  startGameLoop();
+  runBoot(spec);
+}
+
+// escape hatch máximo: corre spec.boot UNA vez con acceso total al DOM.
+// Permite que el deseo transforme la experiencia en cualquier app (gestión, etc.).
+const bootRoot = document.getElementById('app-root') as HTMLElement;
+function runBoot(spec: GameSpec) {
+  // sin boot: volver al estado de juego (canvas visible, container vacío)
+  if (!spec.boot) {
+    if (bootRoot) bootRoot.innerHTML = '';
+    canvas.style.display = '';
+    return;
+  }
+  const api = {
+    root: bootRoot,
+    canvas, ctx, vm, spec,
+    stopGameLoop, startGameLoop,
+    storage: localStorage,
+    W, H,
+  };
+  try {
+    const fn = new Function('api', '"use strict";\nconst {root,canvas,ctx,vm,spec,stopGameLoop,startGameLoop,storage,W,H}=api;\n' + spec.boot);
+    fn(api);
+  } catch (e) {
+    console.error('[boot] error:', e);
+    status.textContent = 'Error en boot: ' + (e as Error).message;
+  }
+}
+
+async function onPlay() {
+  const wish = input.value.trim();
+  if (!wish) { startWith(flappy); return; }
+  const key = getKey();
+  playBtn.disabled = true;
+  try {
+    let spec: GameSpec;
+    if (key) {
+      status.textContent = 'Gemini está reescribiendo el juego…';
+      spec = await compileWithGemini(wish, flappy, { apiKey: key });
+    } else {
+      status.textContent = 'Sin API key: usando parser local de respaldo.';
+      spec = mergeSpec(flappy, compileLocally(wish));
+    }
+    startWith(spec);
+  } catch (err) {
+    status.textContent = 'Error: ' + (err as Error).message;
+    playBtn.disabled = false;
+  }
+}
+
+playBtn.addEventListener('click', onPlay);
+skipBtn.addEventListener('click', () => startWith(flappy));
