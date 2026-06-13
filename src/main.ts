@@ -12,7 +12,7 @@ const ctx = canvas.getContext('2d')!;
 // API key de Gemini opcional: persiste en localStorage para no re-pedirla
 const KEY = 'flappy.geminiKey';
 const getKey = () => localStorage.getItem(KEY) ?? '';
-const getModel = () => localStorage.getItem('flappy.geminiModel') || 'gemini-2.0-flash';
+const getModel = () => localStorage.getItem('flappy.geminiModel') || 'gemini-2.5-flash-lite';
 
 let vm = new VM(flappy, Date.now() & 0xffff);
 
