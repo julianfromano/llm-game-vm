@@ -15,7 +15,7 @@
         border-radius: 16px; padding: 20px; display: grid; gap: 12px; }
       .card h1 { font-size: 18px; margin: 0; }
       .card small { opacity: .6; }
-      textarea, input { width: 100%; box-sizing: border-box; background: #05070f; color: #e2e8f0;
+      textarea, input, select { width: 100%; box-sizing: border-box; background: #05070f; color: #e2e8f0;
         border: 1px solid #334155; border-radius: 8px; padding: 10px; font-family: inherit; font-size: 14px; }
       textarea { min-height: 80px; resize: vertical; }
       .row { display: flex; gap: 8px; }
@@ -33,6 +33,12 @@
         <small>Escribí tu deseo en lenguaje natural: física, reglas, diseño, controles… lo que sea.</small>
         <textarea id="wishInput" placeholder="Ej: poca gravedad y fondo rojo. Con API key de Gemini podés pedir mecánicas nuevas."></textarea>
         <input id="apiKeyInput" type="password" placeholder="Gemini API key (opcional — sin ella usa parser local)" />
+        <select id="modelInput" title="Modelo de Gemini">
+          <option value="gemini-2.0-flash">gemini-2.0-flash (más quota)</option>
+          <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (máxima quota)</option>
+          <option value="gemini-2.5-flash">gemini-2.5-flash (mejor calidad)</option>
+          <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+        </select>
         <div id="wishStatus"></div>
         <div class="row">
           <button id="playBtn">Compilar y jugar</button>
@@ -50,6 +56,10 @@
       const k = document.getElementById('apiKeyInput');
       k.value = localStorage.getItem('flappy.geminiKey') || '';
       k.addEventListener('input', () => localStorage.setItem('flappy.geminiKey', k.value.trim()));
+      // persistir el modelo elegido
+      const m = document.getElementById('modelInput');
+      m.value = localStorage.getItem('flappy.geminiModel') || 'gemini-2.0-flash';
+      m.addEventListener('change', () => localStorage.setItem('flappy.geminiModel', m.value));
     </script>
     <script type="module" src="/src/main.ts"></script>
   </body>

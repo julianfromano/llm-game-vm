@@ -147,7 +147,7 @@ export interface CompileOptions {
 
 // Una llamada a Gemini: manda systemInstruction + texto de usuario, devuelve el texto.
 async function callGemini(systemText: string, userText: string, opts: CompileOptions): Promise<string> {
-  const model = opts.model ?? 'gemini-2.5-flash';
+  const model = opts.model ?? 'gemini-2.0-flash';
   const url = `${GEMINI_BASE}/${model}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: systemText }] },
