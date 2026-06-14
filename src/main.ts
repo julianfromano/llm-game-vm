@@ -47,7 +47,13 @@ canvas.addEventListener('pointerdown', press);
 canvas.addEventListener('pointerup', release);
 
 // debug: exponer estado para inspección manual (solo dev)
-(window as unknown as Record<string, unknown>).__game = { get vm() { return vm; }, render: () => render(ctx, vm, W, H), start: (s: GameSpec) => startWith(s) };
+(window as unknown as Record<string, unknown>).__game = {
+  get vm() { return vm; },
+  render: () => render(ctx, vm, W, H),
+  start: (s: GameSpec) => startWith(s),
+  stop: () => stopGameLoop(),
+  resume: () => startGameLoop(),
+};
 
 // ---- loop con timestep fijo determinista (con control de parada) ----
 const DT = 1 / 60;
