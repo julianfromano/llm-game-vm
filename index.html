@@ -35,6 +35,9 @@
         <select id="providerInput" title="Proveedor de LLM">
           <option value="gemini">Gemini (Google AI Studio)</option>
           <option value="groq">Groq (Llama, gratis y rápido)</option>
+          <option value="glm">GLM / Zhipu (z.ai)</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="openrouter">OpenRouter (GLM, Qwen, Kimi…)</option>
         </select>
         <input id="apiKeyInput" type="password" placeholder="API key (opcional — sin ella usa parser local)" />
         <select id="modelInput" title="Modelo"></select>
@@ -52,6 +55,13 @@
     <p>Espacio o tocá la pantalla para aletear. (VM determinista — deseos compilados a IR)</p>
     <script>
       // proveedor + key + modelo, persistidos por proveedor (no se versionan)
+      // base URL para el fetch en vivo de /models (vacío = sin fetch, usa lista fija)
+      const OAI_BASE = {
+        groq: 'https://api.groq.com/openai/v1',
+        glm: 'https://api.z.ai/api/paas/v4',
+        deepseek: 'https://api.deepseek.com',
+        openrouter: 'https://openrouter.ai/api/v1',
+      };
       const MODELS = {
         gemini: [
           ['gemini-2.5-flash-lite', 'gemini-2.5-flash-lite (recomendado)'],
@@ -60,10 +70,23 @@
           ['gemini-2.0-flash-lite', 'gemini-2.0-flash-lite'],
         ],
         groq: [
-          ['llama-3.3-70b-versatile', 'llama-3.3-70b (recomendado)'],
-          ['llama-3.1-8b-instant', 'llama-3.1-8b (más rápido)'],
-          ['openai/gpt-oss-120b', 'gpt-oss-120b'],
-          ['moonshotai/kimi-k2-instruct', 'kimi-k2'],
+          ['llama-3.3-70b-versatile', 'llama-3.3-70b'],
+          ['llama-3.1-8b-instant', 'llama-3.1-8b (rápido)'],
+        ],
+        glm: [
+          ['glm-4.6', 'glm-4.6 (recomendado)'],
+          ['glm-4.5', 'glm-4.5'],
+          ['glm-4.5-air', 'glm-4.5-air (rápido)'],
+        ],
+        deepseek: [
+          ['deepseek-chat', 'deepseek-chat (V3)'],
+          ['deepseek-reasoner', 'deepseek-reasoner (R1)'],
+        ],
+        openrouter: [
+          ['z-ai/glm-4.6', 'glm-4.6'],
+          ['deepseek/deepseek-chat', 'deepseek-chat'],
+          ['qwen/qwen-2.5-72b-instruct', 'qwen-2.5-72b'],
+          ['moonshotai/kimi-k2', 'kimi-k2'],
         ],
       };
       const prov = document.getElementById('providerInput');
@@ -80,27 +103,27 @@
         model.value = (saved && list.some(([v]) => v === saved)) ? saved : list[0][0];
       }
 
-      // Groq: trae la lista de modelos EN VIVO desde la API (con la key); fallback al set fijo.
-      async function loadGroqModels() {
-        const gk = (localStorage.getItem('flappy.groqKey') || '').trim();
-        if (!gk) return setOptions(MODELS.groq, 'groq');
+      // Proveedores OpenAI-compatibles: traen la lista de modelos EN VIVO (con la key); fallback al set fijo.
+      async function loadLiveModels(p) {
+        const base = OAI_BASE[p];
+        const k = (localStorage.getItem('flappy.' + p + 'Key') || '').trim();
+        if (!base || !k) return setOptions(MODELS[p], p);
         try {
-          const r = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: 'Bearer ' + gk } });
+          const r = await fetch(base + '/models', { headers: { Authorization: 'Bearer ' + k } });
           if (!r.ok) throw new Error(r.status);
           const d = await r.json();
           const ids = (d.data || []).map(m => m.id)
-            .filter(id => !/whisper|tts|guard|embed|compound/i.test(id)) // solo chat
+            .filter(id => !/whisper|tts|guard|embed|compound|rerank|moderation/i.test(id))
             .sort();
-          if (ids.length) setOptions(ids.map(id => [id, id]), 'groq');
-          else setOptions(MODELS.groq, 'groq');
-        } catch { setOptions(MODELS.groq, 'groq'); }
+          setOptions(ids.length ? ids.map(id => [id, id]) : MODELS[p], p);
+        } catch { setOptions(MODELS[p], p); }
       }
 
       function refresh() {
         const p = prov.value;
         key.value = localStorage.getItem('flappy.' + p + 'Key') || '';
-        key.placeholder = (p === 'groq' ? 'Groq' : 'Gemini') + ' API key (opcional)';
-        if (p === 'groq') loadGroqModels(); else setOptions(MODELS.gemini, 'gemini');
+        key.placeholder = p[0].toUpperCase() + p.slice(1) + ' API key (opcional)';
+        if (OAI_BASE[p]) loadLiveModels(p); else setOptions(MODELS.gemini, 'gemini');
       }
       prov.value = localStorage.getItem('flappy.provider') || 'gemini';
       refresh();
@@ -108,7 +131,7 @@
       prov.addEventListener('change', () => { localStorage.setItem('flappy.provider', prov.value); refresh(); });
       key.addEventListener('input', () => {
         localStorage.setItem('flappy.' + prov.value + 'Key', key.value.trim());
-        if (prov.value === 'groq') loadGroqModels(); // recargar lista al pegar la key de Groq
+        if (OAI_BASE[prov.value]) loadLiveModels(prov.value); // recargar lista al pegar la key
       });
       model.addEventListener('change', () => localStorage.setItem('flappy.' + prov.value + 'Model', model.value));
     </script>

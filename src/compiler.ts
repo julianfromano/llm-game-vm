@@ -137,17 +137,26 @@ Devolvé SOLO el GameSpec JSON completo, sin markdown ni explicaciones:
 Sé audaz: inventá entidades, props, tags, reglas y, si hace falta, una app entera en boot — cosas que el desarrollador nunca anticipó.`;
 
 // ---- Proveedores de LLM ----
-// Gemini: console.aistudio.google.com (gratis). Groq: console.groq.com (gratis).
-export type Provider = 'gemini' | 'groq';
+// Gemini (Google AI Studio) + varios compatibles con OpenAI: Groq, GLM (Zhipu/z.ai),
+// DeepSeek, OpenRouter (agregador: GLM, Qwen, Kimi, DeepSeek, etc.).
+export type Provider = 'gemini' | 'groq' | 'glm' | 'deepseek' | 'openrouter';
 
 export interface CompileOptions {
   apiKey: string;
   model?: string;
   provider?: Provider; // default 'gemini'
+  baseUrl?: string;    // override del endpoint OpenAI-compatible (opcional)
 }
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+// base URL (estilo OpenAI, sin /chat/completions) y modelo por defecto por proveedor
+export const OPENAI_PROVIDERS: Record<string, { baseUrl: string; defaultModel: string }> = {
+  groq: { baseUrl: 'https://api.groq.com/openai/v1', defaultModel: 'llama-3.3-70b-versatile' },
+  glm: { baseUrl: 'https://api.z.ai/api/paas/v4', defaultModel: 'glm-4.6' },
+  deepseek: { baseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-chat' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', defaultModel: 'z-ai/glm-4.6' },
+};
 
 // una llamada al LLM = (system, user) -> texto. Reintenta ante 429/503/500.
 type LlmCall = (systemText: string, userText: string) => Promise<string>;
@@ -184,16 +193,17 @@ function geminiCall(opts: CompileOptions): LlmCall {
   };
 }
 
-// Groq (API compatible con OpenAI)
-function groqCall(opts: CompileOptions): LlmCall {
-  const model = opts.model ?? 'llama-3.3-70b-versatile';
+// Cualquier proveedor compatible con OpenAI (Groq, GLM, DeepSeek, OpenRouter, custom)
+function openaiCall(label: string, baseUrl: string, defaultModel: string, opts: CompileOptions): LlmCall {
+  const model = opts.model ?? defaultModel;
+  const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
   return async (systemText, userText) => {
     const body = JSON.stringify({
       model, temperature: 0.4,
       response_format: { type: 'json_object' },
       messages: [{ role: 'system', content: systemText }, { role: 'user', content: userText }],
     });
-    const res = await fetchWithRetry('Groq', () => fetch(GROQ_URL, {
+    const res = await fetchWithRetry(label, () => fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.apiKey}` },
       body,
@@ -233,7 +243,15 @@ async function compileFlow(call: LlmCall, prompt: string, base: GameSpec): Promi
 
 // Punto de entrada: elige proveedor según opts.provider (default gemini).
 export function compile(prompt: string, base: GameSpec, opts: CompileOptions): Promise<GameSpec> {
-  const call = opts.provider === 'groq' ? groqCall(opts) : geminiCall(opts);
+  let call: LlmCall;
+  if (!opts.provider || opts.provider === 'gemini') {
+    call = geminiCall(opts);
+  } else {
+    const preset = OPENAI_PROVIDERS[opts.provider];
+    const baseUrl = opts.baseUrl ?? preset?.baseUrl;
+    if (!baseUrl) throw new Error(`Proveedor desconocido: ${opts.provider}`);
+    call = openaiCall(opts.provider, baseUrl, preset?.defaultModel ?? '', opts);
+  }
   return compileFlow(call, prompt, base);
 }
 

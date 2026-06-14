@@ -14,6 +14,9 @@ const getProvider = (): Provider => (localStorage.getItem('flappy.provider') as 
 const DEFAULT_MODEL: Record<Provider, string> = {
   gemini: 'gemini-2.5-flash-lite',
   groq: 'llama-3.3-70b-versatile',
+  glm: 'glm-4.6',
+  deepseek: 'deepseek-chat',
+  openrouter: 'z-ai/glm-4.6',
 };
 const getKey = (p: Provider) => localStorage.getItem(`flappy.${p}Key`) ?? '';
 const getModel = (p: Provider) => localStorage.getItem(`flappy.${p}Model`) || DEFAULT_MODEL[p];
@@ -112,7 +115,7 @@ async function onPlay() {
   try {
     let spec: GameSpec;
     if (key) {
-      status.textContent = `${provider === 'groq' ? 'Groq' : 'Gemini'} está reescribiendo el juego…`;
+      status.textContent = `${provider} está reescribiendo el juego…`;
       spec = await compile(wish, flappy, { apiKey: key, model: getModel(provider), provider });
     } else {
       status.textContent = 'Sin API key: usando parser local de respaldo.';

@@ -45,7 +45,12 @@ npm run dev      # http://localhost:5173/
 Elegí un **proveedor de LLM** y pegá su **API key** en el overlay (se guarda en localStorage, no se versiona). Sin key, hay un parser local de respaldo para deseos simples.
 
 - **Gemini** — gratis en https://aistudio.google.com/app/apikey (la quota es por modelo; si te quedás sin, probá otro del desplegable).
-- **Groq** — gratis en https://console.groq.com (Llama 3.3 70B, muy rápido, API estilo OpenAI).
+- **Groq** — gratis en https://console.groq.com (Llama, muy rápido).
+- **GLM / Zhipu** — https://z.ai (modelos GLM-4.6/4.5).
+- **DeepSeek** — https://platform.deepseek.com (deepseek-chat / reasoner).
+- **OpenRouter** — https://openrouter.ai (un solo key para GLM, Qwen, Kimi, DeepSeek, etc.).
+
+Todos menos Gemini usan API compatible con OpenAI; el selector de modelos se llena en vivo desde la API del proveedor al pegar la key (con fallback a una lista fija).
 
 Controles base: **Espacio** / click para aletear. Cualquier otra tecla queda disponible para los deseos (`control`, `shift`, flechas, letras...).
 
