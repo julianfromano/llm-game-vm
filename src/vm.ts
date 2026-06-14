@@ -13,6 +13,7 @@ export class VM {
   entities: Entity[] = [];
   state: GameState = 'playing';
   events: string[] = [];
+  time = 0; // segundos transcurridos (para efectos de spawn, etc.)
 
   private spec: GameSpec;
   private nextId = 1;
@@ -35,6 +36,7 @@ export class VM {
     this.nextId = 1;
     this.entities = [];
     this.state = 'playing';
+    this.time = 0;
     this.timers.clear();
     this.crossPrev.clear();
     const ctx = this.baseCtx(0);
@@ -57,6 +59,7 @@ export class VM {
       return;
     }
     this.events = [];
+    this.time += dt;
     this.integrate(dt);
     this.detectCollisions();
     this.runRules(dt);
@@ -330,6 +333,7 @@ export class VM {
     if (this.entities.length >= MAX_ENTITIES) return null;
     const props = this.evalProps(tpl.props, ctx);
     if (!props.acc && props.pos && props.vel) props.acc = { x: 0, y: 0 };
+    props.__born = this.time; // marca para el efecto de aparición (0 = entidad inicial)
     const e: Entity = { id: `e${this.nextId++}`, tags: new Set(tpl.tags), props };
     this.entities.push(e);
     return e;

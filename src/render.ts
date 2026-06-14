@@ -47,6 +47,26 @@ export function render(ctx: CanvasRenderingContext2D, vm: VM, w: number, h: numb
     } else {
       ctx.fillRect(pos.x - size.x / 2, pos.y - size.y / 2, size.x, size.y);
     }
+
+    // efecto de aparición: anillo que se expande y se desvanece (~0.4s) sobre lo recién spawneado
+    const born = e.props.__born as number | undefined;
+    if (typeof born === 'number' && born > 0) {
+      const age = vm.time - born;
+      const DUR = 0.4;
+      if (age >= 0 && age < DUR) {
+        const t = age / DUR;
+        const r0 = Math.max(size.x, size.y) / 2;
+        const radius = r0 + t * 26;
+        ctx.save();
+        ctx.globalAlpha = 1 - t;
+        ctx.lineWidth = 3 * (1 - t) + 1;
+        ctx.strokeStyle = (e.props.color as string) ?? '#fff';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
   }
 
   // HUD
