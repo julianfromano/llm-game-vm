@@ -122,6 +122,7 @@ IMPORTANTE para imágenes: image() necesita una URL pública real y válida; si 
 Te paso el PROGRAMA ACTUAL completo (un GameSpec JSON: {world, entities, rules}). Es el código del juego. Modificalo según el deseo del jugador y devolvé el GameSpec COMPLETO modificado.
 - Trabajás sobre el programa entero: podés reescribir cualquier prop de world, cualquier entidad (su tags y props), y cualquier regla (agregar, borrar, reescribir).
 - Mantené intacto lo que el deseo no pide cambiar (no rompas el juego base salvo que el deseo lo requiera).
+- COHERENCIA: si el deseo cambia CÓMO se pierde o se gana, ELIMINÁ o AJUSTÁ las reglas base de end_game que lo contradigan. No dejes reglas viejas que maten al jugador cuando el deseo dice que eso ya no debe pasar. El juego base pierde en 3 reglas: bird×obstacle, bird×ground, y bird.y<0. Ejemplo: si el deseo dice "al tocar el borde inferior aparece arriba en vez de perder", DEBÉS quitar la regla bird×ground (si no, el piso lo mata antes de poder cruzar). Revisá siempre que las reglas nuevas no queden anuladas por una regla base de derrota.
 - Cuando una mecánica no se exprese con los efectos primitivos, usá el efecto {"e":"js","code":"..."} con poder total.
 
 ## Transformación total: campo "boot" (PODER ABSOLUTO sobre el DOM)
