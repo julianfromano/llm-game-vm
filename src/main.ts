@@ -71,7 +71,19 @@ const overlay = document.getElementById('wish') as HTMLElement;
 const input = document.getElementById('wishInput') as HTMLTextAreaElement;
 const playBtn = document.getElementById('playBtn') as HTMLButtonElement;
 const skipBtn = document.getElementById('skipBtn') as HTMLButtonElement;
+const lastBtn = document.getElementById('lastBtn') as HTMLButtonElement;
 const status = document.getElementById('wishStatus') as HTMLElement;
+
+// memoria del último deseo + spec compilado (para retomar al recargar, sin gastar quota)
+const LAST_WISH = 'flappy.lastWish';
+const LAST_SPEC = 'flappy.lastSpec';
+input.value = localStorage.getItem(LAST_WISH) ?? '';
+const lastSpecRaw = localStorage.getItem(LAST_SPEC);
+if (lastSpecRaw) {
+  const w = localStorage.getItem(LAST_WISH);
+  lastBtn.textContent = `▶ Seguir con el último${w ? `: "${w.slice(0, 40)}${w.length > 40 ? '…' : ''}"` : ''}`;
+  lastBtn.style.display = '';
+}
 
 function startWith(spec: GameSpec) {
   vm = new VM(spec, Date.now() & 0xffff);
@@ -121,6 +133,9 @@ async function onPlay() {
       status.textContent = 'Sin API key: usando parser local de respaldo.';
       spec = mergeSpec(flappy, compileLocally(wish));
     }
+    // recordar el deseo + el spec resultante para retomarlo al recargar
+    localStorage.setItem(LAST_WISH, wish);
+    try { localStorage.setItem(LAST_SPEC, JSON.stringify(spec)); } catch { /* spec muy grande */ }
     startWith(spec);
   } catch (err) {
     status.textContent = 'Error: ' + (err as Error).message;
@@ -130,3 +145,9 @@ async function onPlay() {
 
 playBtn.addEventListener('click', onPlay);
 skipBtn.addEventListener('click', () => startWith(flappy));
+lastBtn.addEventListener('click', () => {
+  const raw = localStorage.getItem(LAST_SPEC);
+  if (!raw) return;
+  try { startWith(JSON.parse(raw) as GameSpec); }
+  catch { status.textContent = 'No se pudo cargar el último juego guardado.'; }
+});
